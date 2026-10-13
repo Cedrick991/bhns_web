@@ -1,35 +1,27 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
-import axios from 'axios'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { authService } from '../services/api'
+import { saveSession } from '../services/session'
+import { apiError } from '../utils/errors'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const error = ref('')
 const isSubmitting = ref(false)
 
-const handleLogin = async () => {
+async function handleLogin() {
   if (!username.value || !password.value) return
-
   try {
     isSubmitting.value = true
     error.value = ''
-
-    const response = await axios.post('/api/login/', {
-      username: username.value,
-      password: password.value
-    })
-
-    const { access, refresh } = response.data.tokens
-    localStorage.setItem('token', access)
-    localStorage.setItem('refresh', refresh)
-    localStorage.setItem('role', response.data.account.role)
-
-    axios.defaults.headers.common['Authorization'] = `Bearer ${access}`
-    router.push('/rooms')
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'Login failed. Please try again.'
+    const { data } = await authService.login({ username: username.value, password: password.value })
+    saveSession(data.tokens.access, data.tokens.refresh, data.account, username.value)
+    router.push('/overview')
+  } catch (err) {
+    error.value = apiError(err, 'Sign in failed. Check your username and password.')
   } finally {
     isSubmitting.value = false
   }
@@ -37,49 +29,31 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="min-h-[80vh] flex items-center justify-center">
-    <div class="bg-white p-8 rounded-lg shadow-md border border-gray-200 w-full max-w-md">
-      <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">BHNS Login</h2>
+  <div class="grid min-h-screen place-items-center p-4">
+    <div class="brut-card w-full max-w-md p-6 sm:p-8">
+      <h1 class="brut-title text-5xl">BHMS.</h1>
+      <p class="mb-6 mt-1 text-muted">Sign in to manage your boarding house.</p>
 
-      <div v-if="$route.query.registered" class="mb-4 p-3 bg-green-50 text-green-700 border border-green-200 rounded-md text-sm text-center">
-        Account created. You can sign in now.
-      </div>
+      <p v-if="route.query.registered" class="brut-flat mb-4 bg-leaf p-3 text-white" role="status">Account created. You can sign in now.</p>
+      <p v-if="error" class="brut-flat mb-4 bg-rust p-3 text-white" role="alert">{{ error }}</p>
 
-      <div v-if="error" class="mb-4 p-3 bg-red-50 text-red-600 border border-red-200 rounded-md text-sm text-center">
-        {{ error }}
-      </div>
-
-      <form @submit.prevent="handleLogin" class="space-y-4">
+      <form class="space-y-4" @submit.prevent="handleLogin">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-          <input
-            v-model="username"
-            type="text"
-            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none"
-            required
-          />
+          <label class="label" for="username">Username</label>
+          <input id="username" v-model="username" class="field" type="text" autocomplete="username" required />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <input
-            v-model="password"
-            type="password"
-            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none"
-            required
-          />
+          <label class="label" for="password">Password</label>
+          <input id="password" v-model="password" class="field" type="password" autocomplete="current-password" required />
         </div>
-        <button
-          type="submit"
-          :disabled="isSubmitting"
-          class="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-md font-medium transition-colors mt-2"
-        >
-          {{ isSubmitting ? 'Authenticating...' : 'Sign In' }}
+        <button type="submit" class="btn btn-teal w-full" :disabled="isSubmitting">
+          {{ isSubmitting ? 'Signing in...' : 'Sign in' }}
         </button>
       </form>
 
-      <p class="mt-4 text-sm text-center text-gray-600">
+      <p class="mt-5 text-center text-sm">
         No account yet?
-        <RouterLink to="/register" class="text-emerald-600 font-medium hover:underline">Register</RouterLink>
+        <RouterLink to="/register" class="font-semibold text-teal-dark underline">Create one</RouterLink>
       </p>
     </div>
   </div>

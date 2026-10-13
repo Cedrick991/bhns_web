@@ -1,117 +1,233 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import { ref, computed, onMounted } from 'vue'
+import { house, loadHouse, accountName, bedFullLabel, tenancyLabel, invNo, invoiceTotals, bedsInRoom } from '../store/house'
+import { tenancyService } from '../services/api'
 
-interface Tenancy {
-  id: number;
-  tenant: number;
-  bed: number;
-  room?: number;
-  check_in_date: string;
-  agreed_rate: string;
-}
 
-const tenancies = ref<Tenancy[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
-
-const newTenancy = ref({
-  tenant: '',
-  bed: '',
-  check_in_date: new Date().toISOString().split('T')[0],
-  agreed_rate: ''
-})
+// ── modal state ──────────────────────────────────────────────
+const showModal = ref(false)
 const isSubmitting = ref(false)
+const error = ref('')
 
-const fetchTenancies = async () => {
-  try {
-    loading.value = true
-    const response = await axios.get('/api/tenancies/')
-    tenancies.value = response.data
-  } catch (err: any) {
-    error.value = 'Failed to load tenancies.'
-    console.error(err)
-  } finally {
-    loading.value = false
-  }
+const form = ref({
+  tenant: '' as number | '',
+  bed: '' as number | '',
+  check_in_date: '',
+  agreed_rate: '',
+})
+
+// ── search ───────────────────────────────────────────────────
+const searchQuery = ref('')
+
+const filteredTenancies = computed(() => {
+  const q = searchQuery.value.toLowerCase()
+  if (!q) return house.tenancies
+  return house.tenancies.filter((t) => {
+    const name = accountName(t.tenant).toLowerCase()
+    const bed  = bedFullLabel(t.bed).toLowerCase()
+    return name.includes(q) || bed.includes(q)
+  })
+})
+
+// Only tenant-role accounts in dropdown
+const tenantAccounts = computed(() =>
+  house.accounts.filter((a) => a.role === 'tenant')
+)
+
+// Only unoccupied beds in dropdown
+const vacantBeds = computed(() =>
+  house.beds.filter((b) => !b.is_occupied)
+)
+
+// ── actions ──────────────────────────────────────────────────
+const openModal = () => {
+  form.value = { tenant: '', bed: '', check_in_date: '', agreed_rate: '' }
+  error.value = ''
+  showModal.value = true
 }
 
-const addTenancy = async () => {
+const createTenancy = async () => {
+  if (!form.value.tenant || !form.value.bed || !form.value.check_in_date || !form.value.agreed_rate) {
+    error.value = 'All fields are required.'
+    return
+  }
   try {
     isSubmitting.value = true
-    const response = await axios.post('/api/tenancies/create/', {
-      tenant: Number(newTenancy.value.tenant),
-      bed: Number(newTenancy.value.bed),
-      check_in_date: newTenancy.value.check_in_date,
-      agreed_rate: newTenancy.value.agreed_rate
+    error.value = ''
+    await tenancyService.create({
+      tenant: Number(form.value.tenant),
+      bed: Number(form.value.bed),
+      check_in_date: form.value.check_in_date,
+      agreed_rate: form.value.agreed_rate,
     })
-    tenancies.value.push(response.data)
-    newTenancy.value.tenant = ''
-    newTenancy.value.bed = ''
-    newTenancy.value.agreed_rate = ''
-  } catch (err: any) {
-    console.error('Failed to add tenancy:', err.response?.data || err)
-    alert('Error creating tenancy. Check fields.')
+    await loadHouse(['tenancies', 'beds'])
+    showModal.value = false
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail ?? 'Failed to create tenancy.'
   } finally {
     isSubmitting.value = false
   }
 }
 
-onMounted(() => fetchTenancies())
+const deleteTenancy = async (id: number) => {
+  if (!confirm('End this tenancy? This cannot be undone.')) return
+  try {
+    await tenancyService.delete(id)
+    await loadHouse(['tenancies', 'beds'])
+  } catch {
+    alert('Failed to delete tenancy.')
+  }
+}
+
+onMounted(() => loadHouse(['tenancies', 'accounts', 'beds']))
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h2 class="text-xl font-bold text-gray-800 mb-4">New Tenancy</h2>
-      <form @submit.prevent="addTenancy" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Tenant ID</label>
-          <input v-model="newTenancy.tenant" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-md" required />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Bed ID</label>
-          <input v-model="newTenancy.bed" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-md" required />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Check-in Date</label>
-          <input v-model="newTenancy.check_in_date" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-md" required />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Agreed Rate (PHP)</label>
-          <input v-model="newTenancy.agreed_rate" type="number" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md" required />
-        </div>
-        <button 
-          type="submit" 
-          :disabled="isSubmitting"
-          class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md font-medium"
-        >
-          {{ isSubmitting ? 'Saving...' : 'Create' }}
-        </button>
-      </form>
+  <div class="space-y-6 max-w-7xl mx-auto">
+
+    <!-- Sub-Navigation Tabs -->
+    <div class="flex flex-wrap gap-4 font-mono text-sm font-bold mb-8">
+      <router-link to="/tenancies"     active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ TENANCIES ]</router-link>
+      <router-link to="/accounts"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ ACCOUNTS ]</router-link>
+      <router-link to="/invoices"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ INVOICES ]</router-link>
+      <router-link to="/invoice-items" active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ CHARGES ]</router-link>
+      <router-link to="/payments"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ PAYMENTS ]</router-link>
     </div>
 
-    <div v-if="loading" class="text-gray-500 animate-pulse">Loading tenancies...</div>
-    
-    <div v-else class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tenant ID</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bed ID</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <tr v-for="t in tenancies" :key="t.id" class="hover:bg-gray-50">
-            <td class="px-6 py-4 text-sm font-medium text-gray-900">#{{ t.tenant }}</td>
-            <td class="px-6 py-4 text-sm text-gray-500">Bed {{ t.bed }} (Room {{ t.room }})</td>
-            <td class="px-6 py-4 text-sm text-emerald-600 font-medium">₱{{ t.agreed_rate }}</td>
-            <td class="px-6 py-4 text-sm text-gray-500">{{ t.check_in_date }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Actions & Search -->
+    <div class="flex flex-col md:flex-row gap-4 items-center">
+      <button
+        @click="openModal"
+        class="w-full md:w-auto border-2 border-black bg-black text-white px-6 py-3 font-mono text-sm font-bold uppercase shadow-[4px_4px_0_0_#000] hover:bg-teal-700 transition-colors whitespace-nowrap"
+      >
+        + New Tenancy
+      </button>
+      <input
+        v-model="searchQuery"
+        type="text"
+        placeholder="[ Search by tenant or bed... ]"
+        class="w-full border-2 border-black bg-white px-4 py-3 font-mono text-sm shadow-[4px_4px_0_0_#000] focus:outline-none"
+      />
     </div>
+
+    <!-- Table -->
+    <div class="border-2 border-black bg-white shadow-[4px_4px_0_0_#000] mt-6">
+      <div class="p-4 border-b-2 border-black bg-[#F4F4F0]">
+        <h3 class="text-lg font-black uppercase tracking-wider">Active Tenancies</h3>
+      </div>
+
+      <div v-if="house.tenancies.length === 0" class="p-8 text-center font-mono text-sm text-gray-500">
+        No tenancies yet. Create one above.
+      </div>
+
+      <div v-else class="overflow-x-auto p-4">
+        <table class="w-full text-left font-mono text-sm border-collapse">
+          <thead>
+            <tr class="border-b-2 border-black">
+              <th class="py-2 pr-4 font-bold uppercase">Tenant</th>
+              <th class="py-2 pr-4 font-bold uppercase">Bed</th>
+              <th class="py-2 pr-4 font-bold uppercase">Check-in</th>
+              <th class="py-2 pr-4 font-bold uppercase">Rate / mo</th>
+              <th class="py-2 font-bold uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="t in filteredTenancies"
+              :key="t.id"
+              class="border-b border-gray-300 hover:bg-[#F4F4F0] transition-colors"
+            >
+              <td class="py-3 pr-4">🛏 {{ accountName(t.tenant) }}</td>
+              <td class="py-3 pr-4">{{ bedFullLabel(t.bed) }}</td>
+              <td class="py-3 pr-4">{{ t.check_in_date }}</td>
+              <td class="py-3 pr-4">₱{{ Number(t.agreed_rate).toLocaleString('en-PH') }}</td>
+              <td class="py-3 font-bold">
+                <button
+                  @click="deleteTenancy(t.id)"
+                  class="hover:bg-red-700 hover:text-white px-1 transition-colors"
+                >[ END ]</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Create Modal -->
+    <Teleport to="body">
+      <div
+        v-if="showModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="showModal = false"
+      >
+        <div class="bg-white border-2 border-black shadow-[6px_6px_0_0_#000] w-full max-w-md mx-4">
+          <div class="p-4 border-b-2 border-black bg-[#F4F4F0] flex justify-between items-center">
+            <h2 class="font-black uppercase tracking-wider text-sm">New Tenancy</h2>
+            <button @click="showModal = false" class="font-mono font-bold hover:bg-black hover:text-white px-2">✕</button>
+          </div>
+
+          <div class="p-6 space-y-4 font-mono text-sm">
+            <div v-if="error" class="bg-red-100 border-2 border-red-700 text-red-800 px-3 py-2 text-xs">{{ error }}</div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Tenant</label>
+              <select v-model="form.tenant" class="w-full border-2 border-black px-3 py-2 bg-white focus:outline-none">
+                <option value="" disabled>Select tenant</option>
+                <option v-for="a in tenantAccounts" :key="a.id" :value="a.id">
+                  {{ a.first_name }} {{ a.last_name }} (@{{ a.username }})
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Bed</label>
+              <select v-model="form.bed" class="w-full border-2 border-black px-3 py-2 bg-white focus:outline-none">
+                <option value="" disabled>Select vacant bed</option>
+                <option v-for="b in vacantBeds" :key="b.id" :value="b.id">
+                  {{ bedFullLabel(b.id) }}
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Check-in Date</label>
+              <input
+                v-model="form.check_in_date"
+                type="date"
+                class="w-full border-2 border-black px-3 py-2 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Agreed Rate (₱ / month)</label>
+              <input
+                v-model="form.agreed_rate"
+                type="number"
+                step="0.01"
+                placeholder="e.g. 3000"
+                class="w-full border-2 border-black px-3 py-2 focus:outline-none"
+              />
+            </div>
+
+            <div class="flex gap-3 pt-2">
+              <button
+                @click="createTenancy"
+                :disabled="isSubmitting"
+                class="flex-1 bg-black text-white border-2 border-black py-2 font-bold uppercase hover:bg-teal-700 transition-colors disabled:opacity-50"
+              >
+                {{ isSubmitting ? 'Saving...' : 'Create' }}
+              </button>
+              <button
+                @click="showModal = false"
+                class="flex-1 border-2 border-black py-2 font-bold uppercase hover:bg-black hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </div>
 </template>

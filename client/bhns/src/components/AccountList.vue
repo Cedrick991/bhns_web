@@ -1,78 +1,189 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import { house, loadHouse, accountName, bedFullLabel, tenancyLabel, invNo, invoiceTotals, bedsInRoom } from '../store/house'
+import { accountService } from '../services/api'
 
-interface Account { id: number; username: string; first_name: string; last_name: string; contact_number: string; role: string; }
 
-const accounts = ref<Account[]>([])
-const loading = ref(true)
-
-const newAccount = ref({ username: '', first_name: '', last_name: '', contact_number: '', role: 'tenant', password: '' })
+// ── modal state ──────────────────────────────────────────────
+const showModal = ref(false)
 const isSubmitting = ref(false)
+const error = ref('')
 
-const fetchAccounts = async () => {
-  try {
-    loading.value = true
-    const response = await axios.get('/api/accounts/')
-    accounts.value = response.data
-  } catch (err: any) { console.error(err) } finally { loading.value = false }
+const form = ref({
+  username: '',
+  first_name: '',
+  last_name: '',
+  contact_number: '',
+  role: 'tenant' as 'tenant' | 'landlord',
+  password: '',
+})
+
+// ── actions ──────────────────────────────────────────────────
+const openModal = () => {
+  form.value = { username: '', first_name: '', last_name: '', contact_number: '', role: 'tenant', password: '' }
+  error.value = ''
+  showModal.value = true
 }
 
-const addAccount = async () => {
+const createAccount = async () => {
+  if (!form.value.username || !form.value.first_name || !form.value.last_name || !form.value.password) {
+    error.value = 'Username, name, and password are required.'
+    return
+  }
   try {
     isSubmitting.value = true
-    const response = await axios.post('/api/accounts/', newAccount.value)
-    accounts.value.push(response.data)
-    newAccount.value = { username: '', first_name: '', last_name: '', contact_number: '', role: 'tenant', password: '' }
-  } catch (err: any) {
-    console.error('Failed to add account:', err)
-    alert('Error creating account. Ensure username is unique.')
-  } finally { isSubmitting.value = false }
+    error.value = ''
+    await accountService.create(form.value)
+    await loadHouse(['accounts'])
+    showModal.value = false
+  } catch (e: any) {
+    const data = e?.response?.data
+    if (data?.username) error.value = `Username: ${data.username[0]}`
+    else error.value = data?.detail ?? 'Failed to create account.'
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
-onMounted(() => fetchAccounts())
+onMounted(() => loadHouse(['accounts']))
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h2 class="text-xl font-bold text-gray-800 mb-4">User Accounts</h2>
-      <form @submit.prevent="addAccount" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">Username</label><input v-model="newAccount.username" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" required /></div>
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">First Name</label><input v-model="newAccount.first_name" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" required /></div>
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">Last Name</label><input v-model="newAccount.last_name" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" required /></div>
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">Contact</label><input v-model="newAccount.contact_number" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" required /></div>
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">Role</label>
-          <select v-model="newAccount.role" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-white">
-            <option value="tenant">Tenant</option>
-            <option value="landlord">Landlord</option>
-          </select>
-        </div>
-        <div><label class="block text-xs font-medium text-gray-600 mb-1">Password</label><input v-model="newAccount.password" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md" required /></div>
-        <div class="md:col-span-3 flex justify-end">
-          <button type="submit" :disabled="isSubmitting" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-md font-medium">{{ isSubmitting ? 'Saving...' : 'Create Account' }}</button>
-        </div>
-      </form>
+  <div class="space-y-6 max-w-7xl mx-auto">
+
+    <!-- Sub-Navigation Tabs -->
+    <div class="flex flex-wrap gap-4 font-mono text-sm font-bold mb-8">
+      <router-link to="/tenancies"     active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ TENANCIES ]</router-link>
+      <router-link to="/accounts"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ ACCOUNTS ]</router-link>
+      <router-link to="/invoices"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ INVOICES ]</router-link>
+      <router-link to="/invoice-items" active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ CHARGES ]</router-link>
+      <router-link to="/payments"      active-class="bg-black text-white" class="border-2 border-black bg-[#EAE8DD] px-4 py-2 uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:text-white transition-colors">[ PAYMENTS ]</router-link>
     </div>
 
-    <div v-if="loading" class="text-gray-500 animate-pulse">Loading accounts...</div>
-    <div v-else class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <tr v-for="acc in accounts" :key="acc.id" class="hover:bg-gray-50">
-            <td class="px-6 py-4 text-sm text-gray-900"><div class="font-medium">{{ acc.first_name }} {{ acc.last_name }}</div><div class="text-gray-500 text-xs">@{{ acc.username }}</div></td>
-            <td class="px-6 py-4"><span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', acc.role === 'landlord' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800']">{{ acc.role }}</span></td>
-            <td class="px-6 py-4 text-sm text-gray-500">{{ acc.contact_number }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Actions -->
+    <div class="flex items-center gap-4">
+      <button
+        @click="openModal"
+        class="border-2 border-black bg-black text-white px-6 py-3 font-mono text-sm font-bold uppercase shadow-[4px_4px_0_0_#000] hover:bg-teal-700 transition-colors whitespace-nowrap"
+      >
+        + New Account
+      </button>
     </div>
+
+    <!-- Table -->
+    <div class="border-2 border-black bg-white shadow-[4px_4px_0_0_#000]">
+      <div class="p-4 border-b-2 border-black bg-[#F4F4F0]">
+        <h3 class="text-lg font-black uppercase tracking-wider">User Accounts</h3>
+      </div>
+
+      <div v-if="house.accounts.length === 0" class="p-8 text-center font-mono text-sm text-gray-500">
+        No accounts yet.
+      </div>
+
+      <div v-else class="overflow-x-auto p-4">
+        <table class="w-full text-left font-mono text-sm border-collapse">
+          <thead>
+            <tr class="border-b-2 border-black">
+              <th class="py-2 pr-4 font-bold uppercase">Name</th>
+              <th class="py-2 pr-4 font-bold uppercase">Username</th>
+              <th class="py-2 pr-4 font-bold uppercase">Contact</th>
+              <th class="py-2 font-bold uppercase">Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="acc in house.accounts"
+              :key="acc.id"
+              class="border-b border-gray-300 hover:bg-[#F4F4F0] transition-colors"
+            >
+              <td class="py-3 pr-4">{{ acc.first_name }} {{ acc.last_name }}</td>
+              <td class="py-3 pr-4 text-gray-500">@{{ acc.username }}</td>
+              <td class="py-3 pr-4">{{ acc.contact_number }}</td>
+              <td class="py-3">
+                <span
+                  :class="acc.role === 'landlord'
+                    ? 'bg-black text-white'
+                    : 'bg-white text-black border border-black'"
+                  class="px-2 py-1 text-[10px] uppercase font-bold"
+                >
+                  [ {{ acc.role.toUpperCase() }} ]
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Create Modal -->
+    <Teleport to="body">
+      <div
+        v-if="showModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="showModal = false"
+      >
+        <div class="bg-white border-2 border-black shadow-[6px_6px_0_0_#000] w-full max-w-md mx-4">
+          <div class="p-4 border-b-2 border-black bg-[#F4F4F0] flex justify-between items-center">
+            <h2 class="font-black uppercase tracking-wider text-sm">New Account</h2>
+            <button @click="showModal = false" class="font-mono font-bold hover:bg-black hover:text-white px-2">✕</button>
+          </div>
+
+          <div class="p-6 space-y-4 font-mono text-sm">
+            <div v-if="error" class="bg-red-100 border-2 border-red-700 text-red-800 px-3 py-2 text-xs">{{ error }}</div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block font-bold uppercase mb-1">First Name</label>
+                <input v-model="form.first_name" type="text" class="w-full border-2 border-black px-3 py-2 focus:outline-none" />
+              </div>
+              <div>
+                <label class="block font-bold uppercase mb-1">Last Name</label>
+                <input v-model="form.last_name" type="text" class="w-full border-2 border-black px-3 py-2 focus:outline-none" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Username</label>
+              <input v-model="form.username" type="text" class="w-full border-2 border-black px-3 py-2 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Contact Number</label>
+              <input v-model="form.contact_number" type="text" class="w-full border-2 border-black px-3 py-2 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Role</label>
+              <select v-model="form.role" class="w-full border-2 border-black px-3 py-2 bg-white focus:outline-none">
+                <option value="tenant">Tenant</option>
+                <option value="landlord">Landlord</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold uppercase mb-1">Password</label>
+              <input v-model="form.password" type="password" class="w-full border-2 border-black px-3 py-2 focus:outline-none" />
+            </div>
+
+            <div class="flex gap-3 pt-2">
+              <button
+                @click="createAccount"
+                :disabled="isSubmitting"
+                class="flex-1 bg-black text-white border-2 border-black py-2 font-bold uppercase hover:bg-teal-700 transition-colors disabled:opacity-50"
+              >
+                {{ isSubmitting ? 'Saving...' : 'Create' }}
+              </button>
+              <button
+                @click="showModal = false"
+                class="flex-1 border-2 border-black py-2 font-bold uppercase hover:bg-black hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </div>
 </template>
