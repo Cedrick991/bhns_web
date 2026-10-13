@@ -7,10 +7,10 @@ defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const router = useRouter()
 
-// Check if the logged-in user is a tenant
+// Check if the logged-in user is a tenant nigga
 const isTenant = currentUser().role === 'tenant'
 
-// Filter out the 'People' group if they are a tenant
+// Filter out the nigga 'People' group if they are a tenant
 const groups = [
   { label: '', items: [
     { to: '/overview', text: 'Overview', icon: 'home' },
@@ -72,7 +72,7 @@ function logout() {
         <button type="button" class="nav-link w-full" @click="logout">
           <Icon name="logout" /><span>Log out</span>
         </button>
-        <p class="mt-3 px-3 text-xs text-muted">A little less admin. A little more home.</p>
+        <p class="mt-3 px-3 text-xs text-muted">A little less admin. A little more home.</p> // uyyy
       </div>
     </div>
   </aside>

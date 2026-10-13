@@ -8,6 +8,7 @@ const api = axios.create({
 })
 
 let unauthorizedHandler: (() => void) | null = null
+
 /** main.ts registers what happens when the token is rejected (clear session, go to login). */
 export function onUnauthorized(fn: () => void): void {
   unauthorizedHandler = fn
@@ -25,23 +26,6 @@ api.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error)) {
       const isAuthCall = /^\/?(login|register)\//.test(error.config?.url ?? '')
-      if (error.response?.status === 401 && !isAuthCall) unauthorizedHandler?.()
-    }
-    return Promise.reject(error)
-  },
-)
-
-// Legacy: pages not yet restyled still import axios directly. Remove after step 5.
-axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-axios.interceptors.response.use(
-  (response) => response,
-  (error: unknown) => {
-    if (axios.isAxiosError(error)) {
-      const isAuthCall = /\/(login|register)\/$/.test(error.config?.url ?? '')
       if (error.response?.status === 401 && !isAuthCall) unauthorizedHandler?.()
     }
     return Promise.reject(error)
@@ -70,12 +54,13 @@ export const bedService = {
 export const tenancyService = {
   getAll: () => api.get<Tenancy[]>('/tenancies/'),
   create: (data: { tenant: number; bed: number; check_in_date: string; agreed_rate: string }) => api.post<Tenancy>('/tenancies/create/', data),
-  delete: (id: number) => api.delete(`/tenancies/${id}/`)
+  delete: (id: number) => api.delete(`/tenancies/${id}/delete/`)
 }
 
 export const accountService = {
   getAll: () => api.get<Account[]>('/accounts/'),
   create: (data: Omit<Account, 'id'> & { password: string }) => api.post<Account>('/accounts/', data),
+  remove: (id: number) => api.delete(`/accounts/${id}/delete/`)
 }
 
 export const invoiceService = {

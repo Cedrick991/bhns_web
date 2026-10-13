@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { house, loadHouse, accountName, bedFullLabel, tenancyLabel, invNo, invoiceTotals, bedsInRoom } from '../store/house'
-import { accountService } from '../services/api'
+import { house, loadHouse } from '../store/house'
+import api, { accountService } from '../services/api'
+import { currentUser } from '../services/session'
+import { neoAlert } from '../composables/useAlert'
 
+// ── permissions ──────────────────────────────────────────────
+const activeUser = currentUser()
+const isLandlord = activeUser.role === 'landlord'
 
 // ── modal state ──────────────────────────────────────────────
 const showModal = ref(false)
@@ -16,6 +21,13 @@ const form = ref({
   contact_number: '',
   role: 'tenant' as 'tenant' | 'landlord',
   password: '',
+})
+
+// ── delete modal state ───────────────────────────────────────
+const deleteModal = ref({
+  isOpen: false,
+  accountId: null as number | null,
+  username: ''
 })
 
 // ── actions ──────────────────────────────────────────────────
@@ -45,6 +57,38 @@ const createAccount = async () => {
   }
 }
 
+const openDeleteModal = (acc: any) => {
+  deleteModal.value = {
+    isOpen: true,
+    accountId: acc.id,
+    username: acc.username
+  }
+}
+
+// Delete nigga accounts
+const deleteAccount = async () => {
+  if (!deleteModal.value.accountId) return
+  try {
+    isSubmitting.value = true
+    
+    await api.delete(`/accounts/${deleteModal.value.accountId}/delete/`)
+    
+    await loadHouse(['accounts'], true)
+    deleteModal.value.isOpen = false
+  } catch (e: any) {
+    deleteModal.value.isOpen = false 
+    const data = e?.response?.data
+    let msg = 'Failed to delete account.'
+    if (data?.detail) msg = data.detail
+    else if (typeof data === 'string') msg = data
+    else if (data && typeof data === 'object') msg = 'Cannot delete this account. It is likely tied to existing tenancies, invoices, or payments.'
+    
+    neoAlert(msg)
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
 onMounted(() => loadHouse(['accounts']))
 </script>
 
@@ -61,7 +105,7 @@ onMounted(() => loadHouse(['accounts']))
     </div>
 
     <!-- Actions -->
-    <div class="flex items-center gap-4">
+    <div v-if="isLandlord" class="flex items-center gap-4">
       <button
         @click="openModal"
         class="border-2 border-black bg-black text-white px-6 py-3 font-mono text-sm font-bold uppercase shadow-[4px_4px_0_0_#000] hover:bg-teal-700 transition-colors whitespace-nowrap"
@@ -88,6 +132,8 @@ onMounted(() => loadHouse(['accounts']))
               <th class="py-2 pr-4 font-bold uppercase">Username</th>
               <th class="py-2 pr-4 font-bold uppercase">Contact</th>
               <th class="py-2 font-bold uppercase">Role</th>
+              <!-- para sa mga nigga lanlords lang ang actions -->
+              <th v-if="isLandlord" class="py-2 font-bold uppercase text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -109,6 +155,17 @@ onMounted(() => loadHouse(['accounts']))
                   [ {{ acc.role.toUpperCase() }} ]
                 </span>
               </td>
+              <!-- Render Actions for landlords -->
+              <td v-if="isLandlord" class="py-3 text-right">
+                <!-- Prevent users from deleting their own account -->
+                <button 
+                  v-if="`${acc.first_name} ${acc.last_name}` !== activeUser.name"
+                  @click="openDeleteModal(acc)" 
+                  class="text-xs font-bold text-red-700 hover:text-white hover:bg-red-700 border-2 border-transparent hover:border-black px-2 py-1 transition-colors"
+                >
+                  [ DELETE ]
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -119,7 +176,7 @@ onMounted(() => loadHouse(['accounts']))
     <Teleport to="body">
       <div
         v-if="showModal"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
         @click.self="showModal = false"
       >
         <div class="bg-white border-2 border-black shadow-[6px_6px_0_0_#000] w-full max-w-md mx-4">
@@ -176,6 +233,44 @@ onMounted(() => loadHouse(['accounts']))
               <button
                 @click="showModal = false"
                 class="flex-1 border-2 border-black py-2 font-bold uppercase hover:bg-black hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Delete Modal -->
+    <Teleport to="body">
+      <div 
+        v-if="deleteModal.isOpen" 
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" 
+        @click.self="deleteModal.isOpen = false"
+      >
+        <div class="bg-white border-4 border-black shadow-[8px_8px_0_0_#000] w-full max-w-md mx-4">
+          <div class="bg-[#EAE8DD] border-b-4 border-black p-4 flex justify-between items-center">
+            <h3 class="font-black uppercase tracking-wider text-sm">Delete Account</h3>
+            <button @click="deleteModal.isOpen = false" class="font-bold hover:bg-black hover:text-white px-2">✕</button>
+          </div>
+          
+          <div class="p-6 space-y-4 font-mono text-sm">
+            <div class="text-red-700 font-bold uppercase text-center py-4">
+              Are you sure you want to delete <span class="text-black bg-red-100 px-1 border border-red-700">@{{ deleteModal.username }}</span>?<br><br>This cannot be undone.
+            </div>
+            
+            <div class="flex gap-2 pt-2">
+              <button 
+                @click="deleteAccount" 
+                :disabled="isSubmitting"
+                class="flex-1 text-white bg-red-700 border-2 border-black py-2 font-bold uppercase shadow-[4px_4px_0_0_#000] hover:bg-black hover:translate-y-1 transition-all disabled:opacity-50"
+              >
+                {{ isSubmitting ? 'Deleting...' : 'Delete' }}
+              </button>
+              <button 
+                @click="deleteModal.isOpen = false" 
+                class="flex-1 bg-white text-black border-2 border-black py-2 font-bold uppercase shadow-[4px_4px_0_0_#000] hover:bg-gray-200 hover:translate-y-1 transition-all"
               >
                 Cancel
               </button>

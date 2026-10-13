@@ -2,20 +2,18 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { house, loadHouse, accountName, bedFullLabel, tenancyLabel, invNo, invoiceTotals, bedsInRoom } from '../store/house'
+import { house, tenancyOfBed } from '../store/house'
 
 const props = withDefaults(defineProps<{ mode?: 'top' | 'orbit' }>(), {
   mode: 'orbit',
 })
 
-//constants 
 const ROOM_W = 10
 const ROOM_H = 4
 const WALL   = 0.5
 const GAP    = 3
 const MIN_D  = 14
 const PITCH  = 5
-
 
 const container = ref<HTMLElement | null>(null)
 const tip       = ref<{ x: number; y: number; lines: string[] } | null>(null)
@@ -35,11 +33,12 @@ let lastSpan    = -1
 const raycaster = new THREE.Raycaster()
 const pointer   = new THREE.Vector2()
 
-// helpers
 const bedsForRoom = (roomId: number) => house.beds.filter(b => b.room_id === roomId)
-const depthOfRoom = (roomId: number) => Math.max(MIN_D, Math.ceil(bedsForRoom(roomId).length / 2) * PITCH + 5)
+const depthOfRoom = (roomId: number) => {
+  const letters = new Set(bedsForRoom(roomId).map(b => b.bed_label.charAt(0)))
+  return Math.max(MIN_D, Math.ceil(letters.size / 2) * PITCH + 5)
+}
 
-// factories
 const box = (w: number, h: number, d: number, side: number, top: number) => {
   const geo     = new THREE.BoxGeometry(w, h, d)
   const sideMat = new THREE.MeshBasicMaterial({ color: side })
@@ -76,18 +75,85 @@ const makeLabel = (text: string) => {
   return mesh
 }
 
-const makeBed = (bedId: number, roomId: number) => {
-  const bed  = house.beds.find(b => b.id === bedId)
-  const g    = new THREE.Group()
-  const tone = bed?.is_occupied ? 0x1f7a7d : 0xc8c8c8
-  const frame    = box(2.6, 0.8, 4.2, 0x8b5a2b, 0x8b5a2b)
-  frame.position.y = 0.9
+const makeBedSlot = (bed: any, roomId: number) => {
+  const isOcc = !!tenancyOfBed(bed.id)
+  const tone = isOcc ? 0x1f7a7d : 0xc8c8c8
+  const g = new THREE.Group()
+  
+  const frame = box(2.6, 0.6, 4.2, 0x8b5a2b, 0x8b5a2b)
+  frame.position.y = 0.3
   const mattress = box(2.4, 0.35, 4, tone, tone)
-  mattress.position.y = 1.475
-  const pillow   = box(1.6, 0.25, 0.9, 0xffffff, 0xffffff)
-  pillow.position.set(0, 1.775, -1.5)
+  mattress.position.y = 0.775
+  const pillow = box(1.6, 0.25, 0.9, 0xffffff, 0xffffff)
+  pillow.position.set(0, 1.075, -1.5)
+  
   g.add(frame, mattress, pillow)
-  g.userData = { kind: 'bed', bedId, roomId }
+  g.userData = { kind: 'bed', bedId: bed.id, roomId }
+  return g
+}
+
+// FIX: Generates a distinct 3D ladder visible from the Top-Down overview
+const makeLadder = () => {
+  const g = new THREE.Group()
+  const railGeo = new THREE.BoxGeometry(0.15, 3.8, 0.15)
+  const rungGeo = new THREE.BoxGeometry(0.8, 0.15, 0.15)
+  const mat = new THREE.MeshBasicMaterial({ color: 0x8b5a2b })
+  mat.userData.base = 0x8b5a2b
+
+  const makeMesh = (geo: THREE.BoxGeometry, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(geo, mat)
+    const lines = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x141414 }))
+    const p = new THREE.Group()
+    p.add(m, lines)
+    p.position.set(x, y, z)
+    return p
+  }
+
+  g.add(makeMesh(railGeo, -0.4, 1.9, 0))
+  g.add(makeMesh(railGeo,  0.4, 1.9, 0))
+  for(let i=0; i<5; i++) {
+    g.add(makeMesh(rungGeo, 0, 0.6 + i*0.6, 0))
+  }
+  return g
+}
+
+const makeBunkBed = (bottomBed: any, topBed: any, roomId: number) => {
+  const g = new THREE.Group()
+
+  if (topBed) {
+    const postGeo = new THREE.BoxGeometry(0.3, 3.8, 0.3)
+    const makePost = (x: number, z: number) => {
+      const p = new THREE.Group()
+      const postMat = new THREE.MeshBasicMaterial({ color: 0x8b5a2b })
+      postMat.userData.base = 0x8b5a2b
+      p.add(new THREE.Mesh(postGeo, postMat))
+      p.add(new THREE.LineSegments(new THREE.EdgesGeometry(postGeo), new THREE.LineBasicMaterial({ color: 0x141414 })))
+      p.position.set(x, 1.9, z)
+      return p
+    }
+    g.add(makePost(-1.15, -1.95))
+    g.add(makePost(1.15, -1.95))
+    g.add(makePost(-1.15, 1.95))
+    g.add(makePost(1.15, 1.95))
+
+    // Attach ladder to the foot of the bed
+    const ladder = makeLadder()
+    ladder.position.set(0, 0, 2.15) 
+    g.add(ladder)
+  }
+
+  if (bottomBed) {
+    const bottom = makeBedSlot(bottomBed, roomId)
+    bottom.position.y = 0 
+    g.add(bottom)
+  }
+
+  if (topBed) {
+    const top = makeBedSlot(topBed, roomId)
+    top.position.y = 1.8 
+    g.add(top)
+  }
+
   return g
 }
 
@@ -110,17 +176,21 @@ const makeRoom = (roomId: number, roomNumber: string) => {
   label.position.set(0, t + 0.02, -d / 2 + 1.2)
   g.add(label)
 
-  beds.forEach((bed, i) => {
-    const b = makeBed(bed.id, roomId)
-    b.position.set(i % 2 === 0 ? -2.4 : 2.4, 0, -d / 2 + 4 + Math.floor(i / 2) * PITCH)
-    g.add(b)
+  const letters = [...new Set(beds.map(b => b.bed_label.charAt(0)))]
+  letters.forEach((letter, index) => {
+    const groupBeds = beds.filter(b => b.bed_label.charAt(0) === letter)
+    const upperBed = groupBeds.find(b => b.bed_label.includes('Upper'))
+    const lowerBed = groupBeds.find(b => b !== upperBed)
+    
+    const bGroup = makeBunkBed(lowerBed, upperBed, roomId)
+    bGroup.position.set(index % 2 === 0 ? -2.4 : 2.4, t, -d / 2 + 4.5 + Math.floor(index / 2) * PITCH)
+    g.add(bGroup)
   })
 
   g.userData = { kind: 'room', roomId, roomNumber }
   return g
 }
 
-// ── scene ─────────────────────────────────────────────────────
 const clearContent = () => {
   for (const child of [...content.children]) {
     content.remove(child)
@@ -209,7 +279,6 @@ const setupCamera = () => {
   grid.visible = props.mode === 'orbit'
 }
 
-// ── hover ─────────────────────────────────────────────────────
 const tint = (g: THREE.Group, on: boolean) => {
   g.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return
@@ -228,16 +297,17 @@ const describe = (g: THREE.Group): string[] => {
     const bed  = house.beds.find(b => b.id === bedId)
     const room = house.rooms.find(r => r.id === roomId)
     if (!bed || !room) return []
+    const isOcc = !!tenancyOfBed(bedId)
     return [
       `${room.room_number} — ${bed.bed_label}`,
-      bed.is_occupied ? 'Occupied' : 'Vacant',
+      isOcc ? 'Occupied' : 'Vacant',
     ]
   }
   const roomBeds = bedsForRoom(roomId)
-  const occ      = roomBeds.filter(b => b.is_occupied).length
+  const occ      = roomBeds.filter(b => !!tenancyOfBed(b.id)).length
   return [
     roomNumber ?? `Room ${roomId}`,
-    `${occ} of ${roomBeds.length} beds occupied`,
+    `${occ} of ${roomBeds.length} slots occupied`,
   ]
 }
 
@@ -275,7 +345,6 @@ const onLeave = () => {
   tip.value = null
 }
 
-// ── lifecycle ─────────────────────────────────────────────────
 onMounted(() => {
   const el = container.value
   if (!el) return
@@ -314,6 +383,7 @@ onMounted(() => {
 
 watch(() => house.rooms,  build, { deep: true })
 watch(() => house.beds,   build, { deep: true })
+watch(() => house.tenancies, build, { deep: true }) 
 watch(() => props.mode, () => { setupCamera(); build() })
 
 onBeforeUnmount(() => {
@@ -331,19 +401,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="relative h-full w-full overflow-hidden bg-paper">
+  <div ref="container" class="relative h-full w-full overflow-hidden bg-[#ebe9d8] border-2 border-black">
     <p
       v-if="house.rooms.length === 0"
-      class="absolute inset-0 z-10 grid place-items-center p-6 text-center text-muted font-mono text-sm"
+      class="absolute inset-0 z-10 grid place-items-center p-6 text-center text-gray-500 font-mono text-sm font-bold uppercase tracking-wider"
     >
       No rooms yet. Add rooms and beds on the Rooms page.
     </p>
     <div
       v-if="tip"
-      class="pointer-events-none absolute z-10 whitespace-nowrap border-2 border-black bg-[#f6f4e7] px-2 py-1 text-xs font-mono font-semibold shadow-[3px_3px_0_#000]"
+      class="pointer-events-none absolute z-10 whitespace-nowrap border-4 border-black bg-white px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider shadow-[4px_4px_0_#000]"
       :style="{ left: tip.x + 'px', top: tip.y + 'px' }"
     >
-      <div v-for="(l, i) in tip.lines" :key="i">{{ l }}</div>
+      <div v-for="(l, i) in tip.lines" :key="i" :class="i === 0 ? 'text-sm mb-1' : 'text-gray-600'">{{ l }}</div>
     </div>
   </div>
 </template>

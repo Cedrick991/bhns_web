@@ -36,8 +36,16 @@ async function handleRegister() {
     if (form.value.role === 'landlord') payload.passcode = form.value.passcode
     await authService.register(payload)
     router.push({ name: 'login', query: { registered: '1' } })
-  } catch (err) {
-    error.value = apiError(err, 'Could not create the account. Please try again.')
+  } catch (err: any) {
+    // Catch Django's specific duplication error for the username field
+    const data = err.response?.data
+    if (data?.username) {
+      error.value = `Username: ${data.username[0]}` // "A user with that username already exists shit is gonna pop up"
+    } else if (data?.passcode) {
+      error.value = data.passcode[0]
+    } else {
+      error.value = apiError(err, 'Could not create the account. Please try again.')
+    }
   } finally {
     isSubmitting.value = false
   }

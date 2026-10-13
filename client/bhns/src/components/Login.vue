@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { authService } from '../services/api'
 import { saveSession } from '../services/session'
-import { apiError } from '../utils/errors'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,8 +19,10 @@ async function handleLogin() {
     const { data } = await authService.login({ username: username.value, password: password.value })
     saveSession(data.tokens.access, data.tokens.refresh, data.account, username.value)
     router.push('/overview')
-  } catch (err) {
-    error.value = apiError(err, 'Sign in failed. Check your username and password.')
+  } catch (err: any) {
+    // Reads the exact error message sa Django backend natin
+    const msg = err.response?.data?.message || err.response?.data?.detail
+    error.value = msg || 'Sign in failed. Please try again.'
   } finally {
     isSubmitting.value = false
   }

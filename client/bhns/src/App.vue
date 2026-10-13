@@ -4,6 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import Sidebar from './components/layout/Sidebar.vue'
 import Topbar from './components/layout/Topbar.vue'
 import ToastHost from './components/ui/ToastHost.vue'
+import AlertModal from './components/AlertModal.vue'
 
 const route = useRoute()
 const menu = ref(false)
@@ -20,4 +21,5 @@ watch(() => route.path, () => { menu.value = false })
     </div>
   </div>
   <ToastHost />
+  <AlertModal />
 </template>

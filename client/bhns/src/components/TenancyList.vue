@@ -2,9 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { house, loadHouse, accountName, bedFullLabel, tenancyLabel, invNo, invoiceTotals, bedsInRoom } from '../store/house'
 import { tenancyService } from '../services/api'
+import { neoAlert } from '@/composables/useAlert'
 
 
-// ── modal state ──────────────────────────────────────────────
+// modal state
 const showModal = ref(false)
 const isSubmitting = ref(false)
 const error = ref('')
@@ -16,7 +17,7 @@ const form = ref({
   agreed_rate: '',
 })
 
-// ── search ───────────────────────────────────────────────────
+// search
 const searchQuery = ref('')
 
 const filteredTenancies = computed(() => {
@@ -39,7 +40,7 @@ const vacantBeds = computed(() =>
   house.beds.filter((b) => !b.is_occupied)
 )
 
-// ── actions ──────────────────────────────────────────────────
+// actions
 const openModal = () => {
   form.value = { tenant: '', bed: '', check_in_date: '', agreed_rate: '' }
   error.value = ''
@@ -75,7 +76,7 @@ const deleteTenancy = async (id: number) => {
     await tenancyService.delete(id)
     await loadHouse(['tenancies', 'beds'])
   } catch {
-    alert('Failed to delete tenancy.')
+    neoAlert('Failed to delete tenancy.')
   }
 }
 
