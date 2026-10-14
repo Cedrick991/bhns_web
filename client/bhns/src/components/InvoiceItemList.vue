@@ -19,7 +19,7 @@ const form = ref({
   amount: '',
 })
 
-// --- FILTERED DATA ---
+// filtered items based on tenant role, line by line comments para ddi malito
 const sortedItems = computed(() => {
   let items = house.items
   

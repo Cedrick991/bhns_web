@@ -19,7 +19,6 @@ const form = ref({
   method: 'cash'
 })
 
-// --- FILTERED DATA ---
 const sortedPayments = computed(() => {
   let pays = house.payments
   
